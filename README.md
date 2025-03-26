@@ -21,7 +21,7 @@ go build -ldflags "-s -w" .
 .\BBcdn.exe -f ..\..\Desktop\test.txt -o 2.txt
 ```
 
-![image-20250326181237638](./imgs/image-20250326181237638.png)
+![image-20250326181237638](./imgs/image-20250326182500927.png)
 
 ## 其他
 
