@@ -150,7 +150,7 @@ func main() {
     rootCmd.Flags().StringVarP(&domain, "domain", "d", "", "指定要检测的域名")
     rootCmd.Flags().StringVarP(&outputFile, "output", "o", "", "指定输出文件")
     rootCmd.Flags().StringVarP(&filename, "filename", "f", "", "指定域名文件{按行读取}")
-    rootCmd.Flags().IntVarP(&threadCount, "thread", "t", 30, "指定并发线程数 (默认 30)")
+    rootCmd.Flags().IntVarP(&threadCount, "thread", "t", 30, "指定并发线程数{默认 30}")
     rootCmd.Execute()
     fmt.Println("")
 }
