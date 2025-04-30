@@ -30,7 +30,7 @@ func stripAnsi(input string) string {
 }
 
 // 处理域名检测
-func processDomain(w io.Writer, fileWriter io.Writer, resolver *DNSResolver, ctx context.Context, domain string) {
+func processDomain(w io.Writer, fileWriter io.Writer, ipOnlyWriter io.Writer, resolver *DNSResolver, ctx context.Context, domain string) {
 	IsCDN, zsip, err := resolver.DetectDomainCDN(ctx, domain)
 	var output string
 
@@ -44,6 +44,9 @@ func processDomain(w io.Writer, fileWriter io.Writer, resolver *DNSResolver, ctx
 		}
 	} else {
 		output = fmt.Sprintf(green+"[+] "+reset+"%s -- 无CDN ("+yellow+"%s"+reset+")\n", domain, zsip)
+		if ipOnlyWriter != nil {
+			fmt.Fprintln(ipOnlyWriter, zsip)
+		}
 	}
 
 	fmt.Fprint(w, output)
@@ -62,33 +65,31 @@ func main() {
 `
 	fmt.Println(green + asciione + reset + "[" + red + "SaiRson" + reset + "]" + " && " + "[" + red + "fy036" + reset + "]" + " -- cdn检测工具")
 
-	// 解析命令行参数
+	// 参数变量
 	var filename string
 	var domain string
 	var outputFile string
+	var outputIPFile string
 	var threadCount int
 
-	// 解析命令
+	// 命令定义
 	var rootCmd = &cobra.Command{
 		Use: "BBcdn",
 		Run: func(cmd *cobra.Command, args []string) {
-			// 设置并发数
 			concurrency = threadCount
 
 			if filename == "" && domain == "" {
 				fmt.Println(yellow + "[!] " + reset + "请使用 -h 查看使用方法")
 				return
 			}
-
 			if filename != "" && domain != "" {
 				fmt.Println(red + "[-]" + reset + " 错误: -d 和 -f 无法同时使用")
 				os.Exit(1)
 			}
 
-			// 终端输出 Writer
 			terminalWriter := os.Stdout
 
-			// 文件输出 Writer
+			// 输出文件
 			var fileWriter io.Writer = io.Discard
 			if outputFile != "" {
 				file, err := os.Create(outputFile)
@@ -100,16 +101,25 @@ func main() {
 				fileWriter = file
 			}
 
-			// 初始化 DNS 解析器
+			// IP-only 输出
+			var ipOnlyWriter io.Writer = nil
+			if outputIPFile != "" {
+				ipFile, err := os.Create(outputIPFile)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "无法创建 IP 输出文件: %v\n", err)
+					os.Exit(1)
+				}
+				defer ipFile.Close()
+				ipOnlyWriter = ipFile
+			}
+
 			resolver := NewDNSResolver()
 			ctx := context.Background()
 
-			// 处理单个域名
 			if domain != "" {
-				processDomain(terminalWriter, fileWriter, resolver, ctx, domain)
+				processDomain(terminalWriter, fileWriter, ipOnlyWriter, resolver, ctx, domain)
 			}
 
-			// 处理文件中的域名列表
 			if filename != "" {
 				file, err := os.Open(filename)
 				if err != nil {
@@ -120,7 +130,7 @@ func main() {
 
 				scanner := bufio.NewScanner(file)
 				var wg sync.WaitGroup
-				semaphore := make(chan struct{}, concurrency) // 控制并发
+				semaphore := make(chan struct{}, concurrency)
 
 				for scanner.Scan() {
 					domain := strings.TrimSpace(scanner.Text())
@@ -132,8 +142,8 @@ func main() {
 					semaphore <- struct{}{}
 					go func(domain string) {
 						defer wg.Done()
-						defer func() { <-semaphore }() // 释放令牌
-						processDomain(terminalWriter, fileWriter, resolver, ctx, domain)
+						defer func() { <-semaphore }()
+						processDomain(terminalWriter, fileWriter, ipOnlyWriter, resolver, ctx, domain)
 					}(domain)
 				}
 
@@ -144,13 +154,31 @@ func main() {
 			}
 		},
 	}
+	fmt.Println("")
+	// 参数绑定
+	rootCmd.Flags().StringVarP(&domain, "domain", "d", "", "指定要检测的域名")
+	rootCmd.Flags().StringVarP(&outputFile, "output", "o", "", "指定输出文件")
+	rootCmd.Flags().StringVarP(&filename, "filename", "f", "", "指定域名文件{按行读取}")
+	rootCmd.Flags().IntVarP(&threadCount, "thread", "t", 30, "指定并发线程数 (默认 30)")
+	rootCmd.Flags().StringVarP(&outputIPFile, "output-ip", "O", "", "只保存无CDN的IP地址")
 
-	// 添加命令行参数
-    fmt.Println("")
-    rootCmd.Flags().StringVarP(&domain, "domain", "d", "", "指定要检测的域名")
-    rootCmd.Flags().StringVarP(&outputFile, "output", "o", "", "指定输出文件")
-    rootCmd.Flags().StringVarP(&filename, "filename", "f", "", "指定域名文件{按行读取}")
-    rootCmd.Flags().IntVarP(&threadCount, "thread", "t", 30, "指定并发线程数{默认 30}")
-    rootCmd.Execute()
-    fmt.Println("")
+	// 自定义帮助顺序
+	rootCmd.SetUsageFunc(func(cmd *cobra.Command) error {
+		fmt.Fprintf(cmd.OutOrStderr(), `用法:
+  BBcdn [flags]
+
+可用参数:
+  -h, --help               显示帮助信息
+  -d, --domain string      指定要检测的域名
+  -f, --filename string    指定域名文件{按行读取}
+  -o, --output string      指定输出文件
+  -O, --output-ip string   只保存无CDN的IP地址
+  -t, --thread int         指定并发线程数(默认 30)
+
+`)
+		return nil
+	})
+
+	rootCmd.Execute()
+	fmt.Println("")
 }
