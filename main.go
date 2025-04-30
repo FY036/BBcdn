@@ -174,7 +174,6 @@ func main() {
   -o, --output string      指定输出文件
   -O, --output-ip string   只保存无CDN的IP地址
   -t, --thread int         指定并发线程数(默认 30)
-
 `)
 		return nil
 	})
